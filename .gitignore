@@ -1,0 +1,32 @@
+# Ignore docker environment files
+.env
+.env.*
+
+# Ignore Docker system files
+**/.docker
+
+# Ignore Python cache and artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyc
+*.pytest_cache/
+*.coverage
+*.DS_Store
+
+# Ignore build artifacts
+build/
+dist/
+*.egg-info/
+
+# Ignore editor-specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+
+# Logs
+*.log
+logs/
