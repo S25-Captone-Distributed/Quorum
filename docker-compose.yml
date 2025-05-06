@@ -1,0 +1,66 @@
+version: "3.8"
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  docker_log_tap:
+    build: ./services/docker_log_tap
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      KAFKA_BROKER: kafka:9092
+      KAFKA_TOPIC: container-logs
+    depends_on:
+      - kafka
+
+  kafka_to_rabbitmq:
+    build: ./services/kafka_to_rabbitmq
+    environment:
+      KAFKA_BROKER: kafka:9092
+      KAFKA_TOPIC: container-logs
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_QUEUE: log-stream
+    depends_on:
+      - kafka
+      - rabbitmq
+
+  kafka_to_elasticsearch:
+    build: ./services/kafka_to_elasticsearch
+    environment:
+      KAFKA_BROKER: kafka:9092
+      KAFKA_TOPIC: container-logs
+      ES_HOST: ${ES_HOST}
+      ES_API_KEY: ${ES_API_KEY}
+      ES_INDEX: container-logs
+    depends_on:
+      - kafka
+
+  dashboard_connector:
+    build: ./services/dashboard_connector
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_QUEUE: log-stream
+    depends_on:
+      - rabbitmq
