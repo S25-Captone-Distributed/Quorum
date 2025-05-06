@@ -1,6 +1,5 @@
 # Container Management System
 
-**Authors**: David K, Sam S, Yoni S, Yoni Z, Yosef B  
 **Project**: Container Management System
 
 ---
