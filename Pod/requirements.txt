@@ -1,0 +1,4 @@
+websockets
+docker
+requests==2.31.0
+aio-pika
