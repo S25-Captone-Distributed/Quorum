@@ -1,4 +1,4 @@
-# Execution & Runtime Scope
+# Container Management System
 
 **Authors**: David K, Sam S, Yoni S, Yoni Z, Yosef B  
 **Project**: Container Management System
@@ -7,119 +7,159 @@
 
 ## 1. Overview
 
-We are building a **container management system** that handles **execution and runtime** for distributed services across multiple nodes. Our team is responsible for managing the execution and runtime components, including:
+We are building a **container management system**—also referred to as the **Cluster Manager**—that handles the execution, runtime, and lifecycle of distributed services across multiple worker nodes. Users interact via:
 
-- **Pod Management**: Creating and managing Pods that encapsulate one or more containers.
-- **Node Management**: Coordinating how Pods are deployed across nodes.
-- **Logging and Monitoring**: Capturing container logs and monitoring service health through heartbeats.
-- **Communication & Routing**: Facilitating data exchange between the Node Manager, Pod Manager, and Pods using ZeroMQ and TCP, while efficiently routing runtime requests to the appropriate services.
+- A **Web UI** dashboard to deploy, start, stop, and monitor services  
+- A **Web API**/CLI for command‑line control
 
-Our design is clearly illustrated in our **Flowchart** and **Execution System C4** diagram. The Flowchart shows the step-by-step process for deployment and execution, while the C4 diagram highlights the relationships between the Node Manager, Pod Manager, Pods, Logging, and Queue components.
+Key responsibilities include:
+
+- **Cluster State & Scheduling**: Maintaining cluster-wide state, scheduling services onto nodes, ensuring resource availability.  
+- **Execution & Runtime**: Managing the end‑to‑end lifecycle of Pods and containers: deploy, start, stop, health‑check, log, and route runtime requests.  
+- **High Availability & Fault Tolerance**: Distributing control‑plane components, tracking node heartbeats, and automatic failover.
 
 ---
 
-## 3. What Are We Doing?
+## 2. Architecture & Components
 
-### High-Level Summary
-1. **Node Manager**: Receives deployment and runtime requests, sends jobs to the Pod Manager, schedules requests to the correct Pods, and monitors node status.
-2. **Pod Manager**: Creates and manages Pods on each node, communicates with containers, and orchestrates container lifecycle actions (pull, start, stop).
-3. **Pods**: Each Pod contains one or more containers. The Pod Manager sets up these containers as needed.
-4. **Logging**: Captures stdout/stderr from containers for monitoring and debugging.
-5. **Communication & Routing**: Uses ZeroMQ for messaging between the Node Manager and Pod Manager, and TCP for direct communication with Pods. This layer also handles the dynamic routing of runtime requests to the appropriate container or Pod.
+### 2.1 Component Diagram
+We employ a Flowchart and a C4 “Execution System” diagram to illustrate how:
+
+1. **Cluster (Node) Manager** – Receives user requests, tracks worker heartbeats, schedules jobs, and maintains cluster state.  
+2. **Pod Manager** – Lives on each node; pulls images, creates/manages Pods, orchestrates container lifecycle.  
+3. **Pods/Containers** – Each Pod may host one or more containers running the actual service.  
+4. **Communication & Queue** – ZeroMQ for inter‑manager messaging; TCP for Pod ↔ Pod‑Manager heartbeats and runtime traffic.  
+5. **Persistence Layer** – Central database (e.g., SQLite or etcd + Redis) to store cluster state, job assignments, logs, and heartbeats.  
+6. **UI / Frontend** – Web dashboard showing cluster and service status.  
+7. **Networking / Infrastructure** – Ensures reliable ZeroMQ and TCP channels across nodes.
+
+---
+
+## 3. Project Objectives
+
+- **Maintain Cluster State**  
+- **Track Worker Nodes** via periodic heartbeats  
+- **Service Lifecycle Management**: Deploy, start, stop services on worker nodes  
+- **Scheduling**: Allocate services to nodes based on CPU/RAM availability  
+- **User Interfaces**:  
+  - Web UI for monitoring and control  
+  - Web API/CLI for automation  
+- **High Availability**: Multiple control‑plane instances with leader election  
 
 ---
 
 ## 4. Scope
 
-- **Deployment and Execution**: Support for deploying new services, starting containers, stopping containers, and reporting status updates.
-- **Inter-Service Communication**: Robust communication channels between the Node Manager, Pod Manager, and Pods via ZeroMQ and TCP.
-- **Runtime Request Handling & Routing**: Efficiently handle and route execution requests in real time, ensuring that runtime requests are processed by the correct Pods.
-- **Logging & Monitoring**: Capture container logs and monitor service health through periodic heartbeats.
-- **Error Handling**: Define clear responses for timeouts, connection failures, and pull errors.
-- **Load Balancing & Resource Management**: Implement scheduling algorithms and resource limits once the basic system is operational.
+### 4.1 Deployment & Execution
+- **Deploy**: Pull container images, create Pods, start containers  
+- **Start/Stop**: Graceful and forced container lifecycle actions  
+- **Runtime Requests**: Submit jobs or service calls, dynamically route to the right Pod  
+
+### 4.2 Inter‑Service Communication
+- **ZeroMQ**: Queue‑based messaging between Cluster Manager and Pod Managers  
+- **TCP**: Direct Pod ↔ Pod Manager communication for heartbeats and request routing  
+
+### 4.3 Logging & Monitoring
+- Capture stdout/stderr logs for auditing and debugging  
+- Monitor service health via heartbeat signals  
+
+### 4.4 Scheduling & Load Balancing
+- Resource‑aware scheduling algorithms  
+- Even distribution of workloads  
+- Dynamic auto‑scaling support (Phase 2)
+
+### 4.5 Error Handling
+- Timeouts, pull failures, connection drops  
+- Node and control‑plane failover  
+- Retry and escalation mechanisms  
 
 ---
 
 ## 5. Features
 
-1. **Execute Services**: Run containers (or sets of containers) as services.
-2. **Deploy**: Pull container images, create Pods, and start containers.
-3. **Start**: Initiate container processes within a Pod.
-4. **Stop**: Gracefully stop containers or force-terminate them if unresponsive.
-5. **Logging**: Capture and store container logs (stdout/stderr) for debugging and audit purposes.
-6. **Monitoring & Heartbeats**: Maintain service health via regular heartbeats from Pods to the Pod Manager.
-7. **Runtime Request Handling & Routing**: Accept runtime requests (e.g., job submissions), route them dynamically to the appropriate Pod/container, and manage responses.
+1. **Cluster State Dashboard** (Web UI & API)  
+2. **Heartbeats**: Worker nodes send periodic pings to indicate aliveness  
+3. **Service Scheduler**: Allocates, rebalances, and reschedules services  
+4. **Pod Lifecycle Management**:  
+   - Pull images  
+   - Create/start/stop containers  
+5. **Runtime Request Routing**:  
+   - Assign job IDs  
+   - Evaluate load & capacity  
+   - Forward to correct Pod via TCP/ZeroMQ  
+6. **Logging & Audit**: Persist container logs and status events  
+7. **High Availability**: Leader election among control‑plane nodes  
 
 ---
 
 ## 6. Use Cases
 
-### 6.1 Deploy a New Service
-1. **Request**: A user sends a “Deploy” command to the **Node Manager** with container image details.
-2. **Queueing**: The Node Manager places a deployment event on a messaging queue (using ZeroMQ).
-3. **Processing**: The **Pod Manager** receives the event, pulls the container image via Docker, and creates a new Pod with the container.
-4. **Confirmation**: The Pod starts up and sends a heartbeat or status update back to the Pod Manager.
-5. **Error Handling**:
-    - **Pull Failure**: If the image pull fails (e.g., due to invalid image name), the Pod Manager reports the error to the Node Manager, which notifies the user.
-    - **Timeout**: If the Pod does not send a heartbeat within the expected timeframe, the Node Manager retries the deployment or raises an alert.
-6. **Status Update**: The Pod Manager updates the Node Manager (or a central database) about the successful or failed deployment.
+### 6.1 Deploy Service
+1. **User → Cluster Manager**: “Deploy” command with image & resource specs  
+2. **Queueing**: Cluster Manager enqueues via ZeroMQ  
+3. **Pod Manager**: Pulls image (Docker), creates Pod  
+4. **Heartbeat**: Pod reports status back  
+5. **Error Handling**: Pull failures, heartbeat timeouts, retries  
+6. **State Update**: Persist success/failure to database and UI  
 
-### 6.2 Start a Container
-1. **Request**: A user sends a “Start Container” command to the **Node Manager**.
-2. **Delegation**: The Node Manager instructs the **Pod Manager** to start the container by its ID.
-3. **Execution**: The Pod Manager executes `docker start <container_id>`.
-4. **Acknowledgement**: The container confirms it has started and sends its status back to the Pod Manager.
-5. **Error Handling**:
-    - **No Response**: If the container fails to start or confirm within a set timeout, the system will retry the start command or escalate the error.
-    - **Connection Failure**: If the TCP/ZeroMQ connection is lost during startup, the system logs the error and attempts to re-establish communication.
+### 6.2 Start Service
+1. **User → Cluster Manager**: “Start” command for deployed service  
+2. **Cluster Manager → Pod Manager**: Instruct to start container  
+3. **Container**: Executes `docker start`, confirms status  
+4. **Error Handling**: Retry on no response or connection failure  
 
-### 6.3 Stop a Container
-1. **Request**: A user sends a “Stop Container” command to the **Node Manager**.
-2. **Delegation**: The Node Manager instructs the **Pod Manager** to stop the specified container.
-3. **Action**: The Pod Manager attempts a graceful shutdown of the container, or forcefully stops it if unresponsive.
-4. **Status Update**: The container sends its updated status (Stopped) back to the Pod Manager.
-5. **Error Handling**:
-    - **Graceful Shutdown Failure**: If the container does not stop gracefully within a timeout, the Pod Manager forces a stop and logs the incident.
-    - **Lost Communication**: If the connection to the container is lost during the stop command, the system logs the event and marks the container for further inspection.
+### 6.3 Stop Service
+1. **User → Cluster Manager**: “Stop” command  
+2. **Pod Manager**: Attempts graceful shutdown, or force‑kills  
+3. **Status Update**: Reports back; logs incidents if forced  
 
-### 6.4 Runtime Request Handling & Routing
-#### 6.4.1 Submit a Runtime Request
-1. **Request**: A user submits a runtime request (e.g., a job submission) to the **Node Manager**.
-2. **Initial Routing**: The Node Manager logs the request and assigns it a job ID.
-3. **Error Handling**: If the request is malformed or missing critical data, an error is immediately returned to the user.
+### 6.4 Submit & Route Runtime Request
+1. **User → Cluster Manager**: Job submission → assign job ID  
+2. **Routing Decision**: Evaluate load, available ports, Pod health  
+3. **Forward**: Pod Manager delivers request to selected Pod  
+4. **Process & Respond**: Pod executes, returns result to user  
+5. **Retries/Escalation**: On processing failures or timeouts  
 
-#### 6.4.2 Route the Request
-1. **Evaluation**: The Node Manager evaluates the request, considering current load, available ports, and Pod capacity.
-2. **Routing Decision**: Based on the evaluation, the Node Manager selects an appropriate Pod and communicates the routing decision to the Pod Manager.
-3. **Error Handling**: If no suitable Pod is found, the request is queued for retry and an error is logged.
-
-#### 6.4.3 Process the Request
-1. **Forwarding**: The Pod Manager forwards the runtime request to the selected Pod using TCP or ZeroMQ.
-2. **Execution**: The Pod processes the request, performing the necessary computations or service operations.
-3. **Error Handling**: If processing fails (e.g., due to internal errors), the Pod logs the error and returns a failure status.
-
-#### 6.4.4 Return the Response
-1. **Response Transmission**: The Pod sends the result or status update back to the Pod Manager.
-2. **Final Relay**: The Pod Manager relays the response back to the Node Manager, which then communicates it to the user.
-3. **Error Handling**: If the response is not received within a set timeout, the system retries the request or escalates the error.
+### 6.5 Display Cluster State
+- Worker nodes report CPU/RAM usage to Cluster Manager  
+- Dashboard reflects real‑time resource utilization and service statuses  
 
 ---
 
-## 7. Request Routing & Service Communication
+## 7. Communication & Routing Principles
 
-1. **Track jobs in memory:** In memory, we maintain a reference to each job, which includes a job ID. This ID allows us to track the status and execution of each job. The other team provides a key, which we associate with the job ID for retrieval and validation.
-2. **Communication between components:** All communication between system components occurs over TCP. The execution team ensures that messages are routed reliably between the Node Manager, Pod Manager, and service instances.
-3. **Ensure failed services do not receive traffic:** We implement a failure-aware request handling system that monitors service health through heartbeats and logs. If a service becomes unresponsive or fails, we dynamically reroute requests to healthy instances.
-4. **Handle newly added services and replicas:** New service instances and replicas are discovered in real time through a service discovery mechanism. This allows the system to automatically adjust routing decisions as new instances become available.
-5. **Optimize request handling for fault tolerance:** To ensure fault tolerance, we implement:
-    - Health checks to verify service availability before routing requests.
-    - Retry mechanisms to reattempt failed requests.
-    - Load balancing to distribute traffic evenly across available services.
+- **Job Tracking**: In‑memory job registry with unique IDs, backed by persistent DB  
+- **Reliable Messaging**: ZeroMQ for reliable queueing; TCP for low‑latency heartbeats  
+- **Health‑Aware Routing**: Reroute away from nodes that miss heartbeats  
+- **Service Discovery**: Real‑time detection of new Pods for routing updates  
+- **Fault Tolerance**: Health checks, retry logic, and load balancing  
 
 ---
 
-## 8. Interactions with Other Components
+## 8. Error Cases & Handling
 
-- **UI / Frontend**: Provides a dashboard for users to deploy, start, and stop containers, submit runtime requests, and view system logs/status.
-- **Database / Persistence**: Manages the centralized database for storing container states, logs, heartbeats, and routing data.
-- **Networking / Infrastructure**: Ensures the underlying network supports stable TCP/ZeroMQ connections among the Node Manager, Pod Manager, and Pods.
+- **Container Pull Failure** → Report & retry with backoff  
+- **Heartbeat Timeout** → Grace period + retry mechanism  
+- **Node Failure** → Mark node as dead, suspend its services, reschedule jobs  
+- **Control‑Plane Failure** → Leader election, failover to standby controllers  
+- **Connection Drops** → Automatic reconnect attempts, escalate if persistent  
+- **Graceful Shutdown Failure** → Force‑kill and log incident  
+
+---
+
+## 9. Future Enhancements (Phase Two)
+
+1. **Dynamic Auto‑Scaling**: Auto‑register new nodes via etcd watchers and rebalance workloads  
+2. **Checkpointing & Job Resumption**: Resume long‑running jobs from last checkpoint  
+3. **Message Queue Layer**: Kafka/RabbitMQ for buffering during network partitions  
+4. **Advanced Security**: API keys for nodes, mandatory TLS, stricter JWT policies  
+5. **Optimized etcd Scaling**: Batch writes, Redis caching, and stale‑entry cleanup  
+
+---
+
+## 10. Interactions with External Components
+
+- **UI / Frontend**: Web dashboard & CLI for user commands and status visualization  
+- **Database / Persistence**: Central store for logs, heartbeats, state, and metrics  
+- **Networking / Infrastructure**: Underlying support for ZeroMQ/TCP channels, TLS encryption  
+- **Monitoring & Alerting**: Integration with external systems (e.g., Prometheus, Grafana) for alerts and dashboards  
